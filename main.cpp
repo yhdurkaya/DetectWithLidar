@@ -66,13 +66,15 @@ int main() {
     //Euclidean Clustering
     std::vector<pcl::PointIndices> clusterIndices;
     pcl::EuclideanClusterExtraction<pcl::PointXYZ> euclideanCluster;
-    euclideanCluster.setClusterTolerance (0.20);
-    euclideanCluster.setMinClusterSize (20);
+    euclideanCluster.setClusterTolerance (0.22);
+    euclideanCluster.setMinClusterSize (30);
     euclideanCluster.setMaxClusterSize (1000);
     euclideanCluster.setSearchMethod (tree);
     euclideanCluster.setInputCloud (outlierCloud);
     euclideanCluster.extract (clusterIndices);
 
+    //TODO
+    // NEED TO TRY WITH DBSCAN, EUCLIDEAN CLUSTERING IS NOT PROMISING
     std::cout << cloud->size() << "\n";
     std::cout << inlierCloud->size() << "\n";
     std::cout << outlierCloud->size() << "\n";
@@ -92,6 +94,10 @@ int main() {
         cloudCluster->width = cloudCluster->points.size();
         cloudCluster->height = 1;
         cloudCluster->is_dense = true;
+
+        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> cloudClusterColorHandler (cloudCluster, 255, 255, 255); // Red
+        viewer.addPointCloud (cloudCluster, cloudClusterColorHandler, "Cloud Cluster" + std::to_string(j));
+
 
         Eigen::Vector4f pcaCentroid;
         pcl::compute3DCentroid(*cloudCluster, pcaCentroid);
