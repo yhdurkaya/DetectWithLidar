@@ -9,6 +9,11 @@
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/sample_consensus/ransac.h>
 #include <pcl/sample_consensus/sac_model_plane.h>
+#include <pcl/search/kdtree.h>
+#include <pcl/segmentation/extract_clusters.h>
+#include <pcl/common/pca.h>
+#include <pcl/common/common.h>
+
 
 int main() {
 
@@ -24,14 +29,16 @@ int main() {
 
     pcl::visualization::PCLVisualizer viewer("Original viewer");
 
+    //DOWNSAMPLING THE CLOUD
     pcl::VoxelGrid<pcl::PointXYZ> voxelGrid;
     voxelGrid.setInputCloud(cloud);
-    voxelGrid.setLeafSize(0.5, 0.5, 0.5);
+    voxelGrid.setLeafSize(0.25, 0.25, 0.25);
     voxelGrid.filter(*cloud);
 
     std::vector<int> inliers;
     std::vector<int> outliers;
 
+    //GETTING THE INLIERS AND OUTLIERS
     pcl::SampleConsensusModelPlane<pcl::PointXYZ>::Ptr modelPlane (new pcl::SampleConsensusModelPlane<pcl::PointXYZ> (cloud));
 
     pcl::RandomSampleConsensus<pcl::PointXYZ> ransac (modelPlane);
@@ -52,17 +59,66 @@ int main() {
     }
     pcl::copyPointCloud(*cloud, outliers, *outlierCloud);
 
+    //Binary Tree
+    pcl::search::KdTree<pcl::PointXYZ>::Ptr tree (new pcl::search::KdTree<pcl::PointXYZ>);
+    tree->setInputCloud (outlierCloud);
+
+    //Euclidean Clustering
+    std::vector<pcl::PointIndices> clusterIndices;
+    pcl::EuclideanClusterExtraction<pcl::PointXYZ> euclideanCluster;
+    euclideanCluster.setClusterTolerance (0.20);
+    euclideanCluster.setMinClusterSize (20);
+    euclideanCluster.setMaxClusterSize (1000);
+    euclideanCluster.setSearchMethod (tree);
+    euclideanCluster.setInputCloud (outlierCloud);
+    euclideanCluster.extract (clusterIndices);
+
+    std::cout << cloud->size() << "\n";
+    std::cout << inlierCloud->size() << "\n";
+    std::cout << outlierCloud->size() << "\n";
+    std::cout << clusterIndices.size() << "\n";
+
     pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> inlierCloudColorHandler (inlierCloud, 0, 255, 0); // Red
     viewer.addPointCloud (inlierCloud, inlierCloudColorHandler, "Inlier Cloud");
 
     pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> outlierCloudColorHandler (outlierCloud, 255, 0, 0); // Red
     viewer.addPointCloud (outlierCloud, outlierCloudColorHandler, "Outlier Cloud");
 
+    int j = 0;
+    for (auto it = clusterIndices.begin (); it != clusterIndices.end (); ++it) {
+        pcl::PointCloud<pcl::PointXYZ>::Ptr cloudCluster(new pcl::PointCloud<pcl::PointXYZ>);
+        for (auto pit = it->indices.begin(); pit != it->indices.end(); ++pit)
+            cloudCluster->points.push_back(outlierCloud->points[*pit]); //*
+        cloudCluster->width = cloudCluster->points.size();
+        cloudCluster->height = 1;
+        cloudCluster->is_dense = true;
+
+        Eigen::Vector4f pcaCentroid;
+        pcl::compute3DCentroid(*cloudCluster, pcaCentroid);
+        Eigen::Matrix3f covariance;
+        computeCovarianceMatrixNormalized(*cloudCluster, pcaCentroid, covariance);
+        Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> eigen_solver(covariance, Eigen::ComputeEigenvectors);
+        Eigen::Matrix3f eigenVectorsPCA = eigen_solver.eigenvectors();
+        eigenVectorsPCA.col(2) = eigenVectorsPCA.col(0).cross(eigenVectorsPCA.col(1));
+
+        Eigen::Matrix4f projectionTransform(Eigen::Matrix4f::Identity());
+        projectionTransform.block<3,3>(0,0) = eigenVectorsPCA.transpose();
+        projectionTransform.block<3,1>(0,3) = -1.f * (projectionTransform.block<3,3>(0,0) * pcaCentroid.head<3>());
+        pcl::PointCloud<pcl::PointXYZ>::Ptr cloudPointsProjected (new pcl::PointCloud<pcl::PointXYZ>);
+        pcl::transformPointCloud(*cloudCluster, *cloudPointsProjected, projectionTransform);
+
+        pcl::PointXYZ minPoint, maxPoint;
+        pcl::getMinMax3D(*cloudPointsProjected, minPoint, maxPoint);
+        const Eigen::Vector3f meanDiagonal = 0.5f*(maxPoint.getVector3fMap() + minPoint.getVector3fMap());
+
+        const Eigen::Quaternionf bboxQuaternion(eigenVectorsPCA);
+        const Eigen::Vector3f bboxTransform = eigenVectorsPCA * meanDiagonal + pcaCentroid.head<3>();
+
+        viewer.addCube(bboxTransform, bboxQuaternion, maxPoint.x - minPoint.x, maxPoint.y - minPoint.y, maxPoint.z - minPoint.z, "cube" + std::to_string(j));
+        ++j;
+    }
+
     while(!viewer.wasStopped()){
         viewer.spinOnce();
     }
-
-    std::cout << cloud->size() << "\n";
-    std::cout << inlierCloud->size() << "\n";
-    std::cout << outlierCloud->size() << std::endl;
 }
