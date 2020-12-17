@@ -27,13 +27,29 @@ int main() {
         return (-1);
     }
 
-    pcl::visualization::PCLVisualizer viewer("Original viewer");
+    pcl::visualization::PCLVisualizer viewerInitial("Initial viewer");
+    pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> cloudHandler (cloud, 0, 255, 0); // Red
+    viewerInitial.addPointCloud (cloud, cloudHandler, "Initial Cloud");
 
-    //DOWNSAMPLING THE CLOUD
+    while(!viewerInitial.wasStopped()){
+        viewerInitial.spinOnce();
+    }
+
+/*
+    DOWNSAMPLING THE CLOUD
     pcl::VoxelGrid<pcl::PointXYZ> voxelGrid;
     voxelGrid.setInputCloud(cloud);
     voxelGrid.setLeafSize(0.25, 0.25, 0.25);
     voxelGrid.filter(*cloud);
+
+    pcl::visualization::PCLVisualizer viewerDownsampled("Downsampled viewer");
+    pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> downsampledCloudHandler (cloud, 0, 255, 0); // Red
+    viewerDownsampled.addPointCloud (cloud, downsampledCloudHandler, "Downsampled Cloud");
+
+    while(!viewerDownsampled.wasStopped()){
+        viewerDownsampled.spinOnce();
+    }
+*/
 
     std::vector<int> inliers;
     std::vector<int> outliers;
@@ -80,11 +96,20 @@ int main() {
     std::cout << outlierCloud->size() << "\n";
     std::cout << clusterIndices.size() << "\n";
 
+    pcl::visualization::PCLVisualizer viewer("Original viewer");
     pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> inlierCloudColorHandler (inlierCloud, 0, 255, 0); // Red
     viewer.addPointCloud (inlierCloud, inlierCloudColorHandler, "Inlier Cloud");
 
     pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> outlierCloudColorHandler (outlierCloud, 255, 0, 0); // Red
     viewer.addPointCloud (outlierCloud, outlierCloudColorHandler, "Outlier Cloud");
+
+    pcl::visualization::PCLVisualizer viewerRANSAC("RANSAC viewer");
+    viewerRANSAC.addPointCloud (inlierCloud, inlierCloudColorHandler, "Inlier Cloud");
+    viewerRANSAC.addPointCloud (outlierCloud, outlierCloudColorHandler, "Outlier Cloud");
+
+    while(!viewerRANSAC.wasStopped()){
+        viewerRANSAC.spinOnce();
+    }
 
     int j = 0;
     for (auto it = clusterIndices.begin (); it != clusterIndices.end (); ++it) {
@@ -120,7 +145,7 @@ int main() {
         const Eigen::Quaternionf bboxQuaternion(eigenVectorsPCA);
         const Eigen::Vector3f bboxTransform = eigenVectorsPCA * meanDiagonal + pcaCentroid.head<3>();
 
-        viewer.addCube(bboxTransform, bboxQuaternion, maxPoint.x - minPoint.x, maxPoint.y - minPoint.y, maxPoint.z - minPoint.z, "cube" + std::to_string(j));
+        //viewer.addCube(bboxTransform, bboxQuaternion, maxPoint.x - minPoint.x, maxPoint.y - minPoint.y, maxPoint.z - minPoint.z, "cube" + std::to_string(j));
         ++j;
     }
 
